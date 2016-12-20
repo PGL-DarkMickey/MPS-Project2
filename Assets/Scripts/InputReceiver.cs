@@ -6,27 +6,30 @@ using System.IO;
 
 public class InputReceiver : MonoBehaviour {
 
-
-	// TODO:
-	// adjust score receiving to include other factors such as visual effects
-	// add restart button
-	// add new levels and words to database
-
 	public int nr_levels;
 	public int strikes;
+	public int words_per_level;
+	public AudioClip default_clip;
+	public AudioClip endgame_clip;
+	public GameObject timer;
+	public GameObject camera;
+
+	[HideInInspector]
+	public int strikes_left;
+	[HideInInspector]
+	public int level;
+
 	private List<List<string>> words;//cate o lista de cuvinte pentru fiecare nivel
 	private Text display_text;
 	private string input_text;
 	private int p;
-	private int level;
-    private int wordsPerlevel;
     private bool active;
 	private int current,previous;
 	private int score;
 	private int written_words;
 	private bool game_over;
-    private System.DateTime startTime;
-    private int secondsLimit;
+	private float seconds_left;
+	private int seconds_limit;
 
     #region Effects
     void Effect1()
@@ -67,7 +70,7 @@ public class InputReceiver : MonoBehaviour {
         var angleX = Random.Range(-60, 60);
         var angleZ = Random.Range(0, 360);
         var input = GameObject.Find("Input");
-        input.transform.localEulerAngles = new Vector3(angleX, 180, angleZ);
+        input.transform.localEulerAngles = new Vector3(angleX, 0, angleZ);
     }
     #region EffectRotate X/Y/Z/All
     void EffectRotateX(int x_angle = 1)
@@ -123,29 +126,34 @@ public class InputReceiver : MonoBehaviour {
     #region EffectScaleRandom X/Y/Z/All
     void EffectScaleRandomX()
     {
-        var scale = Random.Range(0.2F, 2.0F);
+        var scale = Random.Range(0.5F, 1.2F);
         var input = GameObject.Find("Input");
         input.transform.localScale = new Vector3(scale, 1, 1);
     }
     void EffectScaleRandomY()
     {
-        var scale = Random.Range(0.2F, 2.0F);
+        var scale = Random.Range(0.5F, 2.0F);
         var input = GameObject.Find("Input");
         input.transform.localScale = new Vector3(1, scale, 1);
     }
     void EffectScaleRandomZ()
     {
-        var scale = Random.Range(0.2F, 2.0F);
+        var scale = Random.Range(0.5F, 2.0F);
         var input = GameObject.Find("Input");
         input.transform.localScale = new Vector3(1, 1, scale);
     }
     void EffectScaleRandomAll()
     {
+		EffectScaleRandomX ();
+		EffectScaleRandomY ();
+		EffectScaleRandomZ ();
+		/*
         var scaleX = Random.Range(0.2F, 2.0F);
         var scaleY = Random.Range(0.2F, 2.0F);
         var scaleZ = Random.Range(0.2F, 2.0F);
         var input = GameObject.Find("Input");
         input.transform.localScale = new Vector3(scaleX, scaleY, scaleZ);
+        */
     }
     #endregion
     #endregion
@@ -180,7 +188,16 @@ public class InputReceiver : MonoBehaviour {
                 Effect5();
                 break;
         }
-        startTime = System.DateTime.Now;
+		seconds_left = seconds_limit;
+
+		string aux;
+		int i;
+
+		aux = input_text[p].ToString();
+		i = 26 * p;
+		display_text.text = display_text.text.Remove(i, 1);
+		display_text.text = display_text.text.Insert(i, "?");
+		display_text.text = display_text.text.Replace("?", "<color=#0000ffff>" + aux + "</color>");
     }
 
     void readFromFile(string file){
@@ -207,10 +224,6 @@ public class InputReceiver : MonoBehaviour {
 	// Use this for initialization
 	void Start () {
         ClearEffects();
-        wordsPerlevel = 7;
-        secondsLimit = 5;
-        strikes = 3;
-        nr_levels = 5;
         display_text = GetComponent<Text> ();
 		display_text.supportRichText=true;
 
@@ -221,10 +234,19 @@ public class InputReceiver : MonoBehaviour {
 		game_over = false;
 		level = 1;
 		score = 0;
+		strikes_left = strikes;
 		written_words = 0;
 		current = -1; previous=-1;
 		readFromFile ("words-database");
+		seconds_limit = 5;
 		SetNewWord ();
+
+		AudioSource audio;
+		audio = GetComponent<AudioSource>();
+		audio.clip = default_clip;
+		audio.Stop ();
+		audio.Play ();
+		audio.mute = false;
 	}
 	
 	// Update is called once per frame
@@ -233,51 +255,80 @@ public class InputReceiver : MonoBehaviour {
 			return;
 		string aux;
 		int i;
+
+		seconds_left -= Time.deltaTime;
+		if (seconds_left < 0) seconds_left = 0;
+		float s = seconds_left;
+		s = Mathf.Round(s * 100f) / 100f;
+		timer.GetComponent<Text> ().text = s.ToString ();
+		if (seconds_left==0) StartCoroutine(ErrorWait());
+
 		if (Input.anyKeyDown && !Input.GetMouseButton(0) && !Input.GetMouseButton(1)) {
             if (Input.GetKeyDown(input_text[p].ToString()))
             {
                 aux = input_text[p].ToString();
                 i = 26 * p;
-                display_text.text = display_text.text.Remove(i, 1);
+                display_text.text = display_text.text.Remove(i, 26);
                 display_text.text = display_text.text.Insert(i, "?");
                 display_text.text = display_text.text.Replace("?", "<color=#00ff00ff>" + aux + "</color>");
 
-
                 p++;
-                if (p == input_text.Length)
-                {//when player successfully writes the word
-                    written_words += 1;
-                    score += level * input_text.Length;
+				if (p == input_text.Length) {//when player successfully writes the word
+					written_words += 1;
+					score += level * input_text.Length;
+					if (level == nr_levels)
+						score += 100;
 
-                    if (written_words == level * wordsPerlevel)
-                    {//when player writes enough words he advances to the next level
-                        level++;
-                        previous = -1;
-                        current = -1;
-                        if (level > nr_levels)
-                        {
-                            ClearEffects();
-                            display_text.text = "YOU WON!";
-                            display_text.color = Color.green;
-                            display_text.fontSize = 100;
-                            GameObject.Find("Score").GetComponent<Text>().text = "Final score: " + score;
-                            GameObject.Find("Score").GetComponent<Text>().color = Color.green;
-                            game_over = true;
-                            return;
-                        }
-                    }
-                    SetNewWord();
-                }
+					if (written_words == level * words_per_level && level < nr_levels) {//when player writes enough words he advances to the next level
+						level++;
+						strikes_left += 1;
+						switch (level) {
+						case 2:
+							{
+								seconds_limit = 7;
+								break;
+							}
+						case 3:
+							{
+								seconds_limit = 10;
+								break;
+							}
+						case 4:
+							{
+								seconds_limit = 12;
+								break;
+							}
+						case 5:
+							{
+								seconds_limit = 15;
+								break;
+							}
+						}
+							
+						previous = -1;
+						current = -1;
+						if (level == nr_levels) {
+							AudioSource audio;
+							audio = GetComponent<AudioSource>();
+							audio.Stop ();
+							audio.clip = endgame_clip;
+							audio.Play ();
+						}
+					}
+					StartCoroutine(WinWait());
+				} else {
+					aux = input_text[p].ToString();
+					i = 26 * p;
+					display_text.text = display_text.text.Remove(i, 1);
+					display_text.text = display_text.text.Insert(i, "?");
+					display_text.text = display_text.text.Replace("?", "<color=#0000ffff>" + aux + "</color>");
+				}
             }
             else
             {
                 StartCoroutine(ErrorWait());
             }
 		}
-        if ((System.DateTime.Now - startTime).TotalSeconds > secondsLimit)
-        {
-            StartCoroutine(ErrorWait());
-        }
 	}
     void OnGUI()
     {
@@ -287,17 +338,19 @@ public class InputReceiver : MonoBehaviour {
 
 
     IEnumerator ErrorWait() {
-		strikes -= 1;
-		if (strikes == 0) {
+		strikes_left -= 1;
+		if (strikes_left == 0) {
 			game_over = true;
             ClearEffects();
-            display_text.text = "YOU LOST!";
-			display_text.color = Color.red;
+            display_text.text = "Congratulations!";
+			display_text.color = Color.green;
 			display_text.fontSize = 100;
 			GameObject.Find ("Score").GetComponent<Text> ().text = "Final score: "+score;
-			GameObject.Find ("Score").GetComponent<Text> ().color = Color.red;
+			GameObject.Find ("Score").GetComponent<Text> ().color = Color.green;
 
-			print ("Done");
+			AudioSource audio;
+			audio = GetComponent<AudioSource>();
+			audio.mute = true;
 		}
 		else {
 			active = false;
@@ -307,5 +360,11 @@ public class InputReceiver : MonoBehaviour {
 			SetNewWord ();
 			active = true;
 		}
+	}
+	IEnumerator WinWait() {
+		active = false;
+		yield return new WaitForSeconds (0.3F);
+		SetNewWord ();
+		active = true;
 	}
 }
